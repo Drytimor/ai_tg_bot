@@ -4,7 +4,6 @@ from contextvars import ContextVar
 from logging.config import dictConfig
 
 
-# 'propagate': False
 def filter_level_maker(level):
     level = getattr(logging, level)
 
@@ -18,9 +17,10 @@ user_id: ContextVar[int] = ContextVar("user_id")
 user_request: ContextVar["Request"] = ContextVar("user_request")
 user_response: ContextVar["Response"] = ContextVar("user_response")
 user_error: ContextVar[dict] = ContextVar("user_error")
+user_payment: ContextVar[dict] = ContextVar("user_payment")
 
 
-class RequestInfoFilter(logging.Filter):
+class RequestCoreInfoFilter(logging.Filter):
 
     def filter(self, record):
         record.user_id = user_id.get()
@@ -28,15 +28,13 @@ class RequestInfoFilter(logging.Filter):
         record.request_url = request.url
         record.request_method = request.method
         record.request_content = request.content
-        # record.request_headers = request.headers
         response = user_response.get()
         record.response_status_code = response.status_code
         record.response_content = response.content
-
         return True
 
 
-class RequestErrorFilter(logging.Filter):
+class RequestCoreErrorFilter(logging.Filter):
 
     def filter(self, record):
         record.user_id = user_id.get()
@@ -45,11 +43,15 @@ class RequestErrorFilter(logging.Filter):
         record.request_url = request.url
         record.request_method = request.method
         record.request_content = request.content
-        # record.request_headers = request.headers
         record.error_status = error.get("status")
         record.error_code = error.get("code")
         record.error_message = error.get("message")
         return True
+
+
+class WebhookPayment(logging.Filter):
+    def filter(self, record):
+        pass
 
 
 fmt_user_info = (
@@ -71,11 +73,11 @@ logging_config = {
             "level": "INFO"
         },
         "request_info": {
-            "()": RequestInfoFilter
+            "()": RequestCoreInfoFilter
         },
         "request_error": {
-            "()": RequestErrorFilter
-        }
+            "()": RequestCoreErrorFilter
+        },
     },
     "formatters": {
         "simple": {
@@ -89,7 +91,7 @@ logging_config = {
         "user_error": {
             "format": fmt_user_error,
             "datefmt": "%Y-%m-%d %H:%M:%S"
-        }
+        },
     },
     "handlers": {
         "queue_handler": {
@@ -99,7 +101,7 @@ logging_config = {
         "default": {
             "class": "logging.StreamHandler",
             "formatter": "simple",
-            "stream": "ext://sys.stderr",
+            "stream": "ext://sys.stdout",
             "level": "INFO"
         },
         "file_dev": {
@@ -122,15 +124,30 @@ logging_config = {
             "filename": "app/log/core_error_http.log",
             "level": "ERROR"
         },
+        "file_payment_error": {
+            "class": "logging.FileHandler",
+            "formatter": "user_info",
+            "filters": ["request_info"],
+            "filename": "app/log/core_error_http.log",
+            "level": "ERROR"
+        },
     },
     "loggers": {
         "uvicorn": {
             "handlers": ["default"],
             "level": 'INFO',
         },
-        "log": {
+        "core_api": {
             "handlers": ["file_core_info", "file_core_error"],
-            "level": "INFO"
+            "level": "INFO",
+        },
+        "payment": {
+            "handlers": ["file_core_info", "file_payment_error"],
+            "level": "INFO",
+        },
+        "raw_exception": {
+            "handlers": ["file_dev"],
+            "level": "ERROR"
         },
         "httpx": {
             "handlers": ["file_dev"],
@@ -149,35 +166,9 @@ logging_config = {
 
 
 dictConfig(logging_config)
-logger = logging.getLogger("log")
 queue_handler = logging.getHandlerByName("queue_handler")
 
-"""
-class CustomAdapter(logging.LoggerAdapter):
-    def process(self, msg, kwargs):
-        my_context = kwargs.pop('id', self.extra['id'])
-        return 'id=%s %s' % (my_context, msg), kwargs
-fmt = logging.Formatter("%(levelname)s: [%(asctime)s] %(name)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
-logger.setLevel(logging.INFO)
-
-file_handler_info = logging.FileHandler("app/log/core_info_http.log")
-file_handler_info.setLevel(logging.INFO)
-file_handler_info.setFormatter(fmt)
-file_handler_info.addFilter(filter_maker("INFO"))
-
-file_handler_error = logging.FileHandler("app/log/core_error_http.log")
-file_handler_error.setLevel(logging.ERROR)
-file_handler_error.setFormatter(fmt)
-
-logger.addHandler(file_handler_info)
-logger.addHandler(file_handler_error)
-
-que = queue.Queue()
-queue_handler = QueueHandler(que)
-logger.addHandler(queue_handler)
-
-listener = QueueListener(
-    que, file_handler_error, file_handler_info, respect_handler_level=True,
-)
-"""
+logger_core = logging.getLogger("core_api")
+logger_payment = logging.getLogger("payment")
+logger_raw_exc = logging.getLogger("raw_exception")

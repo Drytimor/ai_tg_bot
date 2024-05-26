@@ -1,4 +1,10 @@
-from aiogram.types import BotCommand, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import (
+    BotCommand,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton
+)
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 from .text import commands_bot
@@ -23,5 +29,14 @@ def model_buttons(models: list):
         one_time_keyboard=True,
         is_persistent=True
     )
+
+
+def payment_button() -> "InlineKeyboardMarkup":
+    button = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Пополнить", callback_data="top_up_balance")]
+        ]
+    )
+    return button
 
 
