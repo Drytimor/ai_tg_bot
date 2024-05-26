@@ -1,10 +1,12 @@
+import datetime
+from decimal import Decimal
 from sqlalchemy.dialects.postgresql import insert as psg_insert
 from sqlalchemy import (
     insert, select, update, and_
 )
 from app.config.database import async_engine
 from app.database.models import (
-    user_table, user_profile, user_models
+    user_table, user_profile, user_models, user_payments
 )
 
 
@@ -148,7 +150,7 @@ async def update_dialogue_user(user_tg_id: int, dialogue_id: int):
     await async_engine.dispose()
 
 
-async def inc_number_dialogue_user(user_tg_id):
+async def inc_number_dialogue_user(user_tg_id: int):
     async with async_engine.connect() as connect:
 
         stmt = (
@@ -174,3 +176,118 @@ async def inc_number_dialogue_user(user_tg_id):
 
     return result.first()
 
+
+async def get_user_balance_from_db(user_tg_id: int):
+    async with async_engine.connect() as connect:
+        stmt = (
+            select(user_profile.c.balance).
+            where(
+                user_profile.c.user_tg_id == user_tg_id
+            )
+        )
+        result = await connect.execute(stmt)
+
+    await async_engine.dispose()
+
+    return result.scalar_one()
+
+
+async def create_user_payment_in_db(
+    user_tg_id: int,
+    payment_id: str,
+    recipient_id: str,
+    status: str,
+    amount: "Decimal",
+    currency: str,
+    created_at: "datetime",
+):
+    async with async_engine.connect() as connect:
+        stmt = (
+           insert(user_payments).
+           values(
+               user_tg_id=user_tg_id,
+               payment_id=payment_id,
+               recipient_id=recipient_id,
+               status=status,
+               amount=amount,
+               currency=currency,
+               created_at=created_at
+           )
+        )
+
+        await connect.execute(stmt)
+        await connect.commit()
+
+    await async_engine.dispose()
+
+
+async def increment_user_balance_in_db(
+    user_tg_id: int,
+    payment_id: str,
+    status: str,
+    amount: "Decimal",
+    income_amount: "Decimal",
+    captured_at: "datetime",
+    receipt_registration: str
+):
+    async with async_engine.connect() as connect:
+        update_cte = (
+            update(user_payments).
+            values(
+                status=status,
+                captured_at=captured_at,
+                income_amount=income_amount,
+                receipt_registration=receipt_registration
+            ).
+            where(user_payments.c.payment_id == payment_id)
+        ).cte("cte")
+
+        stmt = (
+            update(user_profile).
+            values(
+                balance=(user_profile.c.balance + amount),
+                update_at=datetime.datetime.now()
+            ).
+            where(user_profile.c.user_tg_id == int(user_tg_id))
+        ).add_cte(update_cte)
+
+        await connect.execute(stmt)
+        await connect.commit()
+
+    await async_engine.dispose()
+
+
+async def cansel_payment_user_in_db(
+    payment_id: str,
+    status: str,
+    cancellation_details: str
+):
+    async with async_engine.connect() as connect:
+
+        stmt = (
+            update(user_payments).
+            values(
+                status=status,
+                cancellation_details=cancellation_details
+            ).
+            where(user_payments.c.payment_id == payment_id)
+        )
+
+        await connect.execute(stmt)
+        await connect.commit()
+
+    await async_engine.dispose()
+
+
+async def decrement_user_balance_in_db(user_tg_id: int, amount: "Decimal"):
+    async with async_engine.connect() as connect:
+        stmt = (
+            update(user_profile).
+            values(balance=(user_profile.c.balance - amount)).
+            where(user_profile.c.user_tg_id == user_tg_id)
+        )
+
+        await connect.execute(stmt)
+        await connect.commit()
+
+    await async_engine.dispose()

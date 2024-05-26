@@ -1,3 +1,6 @@
+import uuid
+from base64 import b64encode
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import PostgresDsn, RedisDsn
 from pydantic_core import MultiHostUrl
@@ -23,6 +26,7 @@ class Settings(BaseSettings):
     CACHE_DEFAULT_TTL: int = 60 * 5
     TELEGRAM_EMAIL: str = "id-%d@telegram.org"
     USER_DIALOGUE_INFO: str = "id-%d-model"
+    PARAM_PRICE: str = "price-param"
 
     # ngrok
     DOMAIN: str
@@ -38,6 +42,14 @@ class Settings(BaseSettings):
     DEFAULT_NAME_GPT_MODEL: str
     FIRST_NAME_DIALOGUE_MODEL: str = "dialogue"
     NAME_DIALOGUE_MODEL: str = "dialogue %d"
+
+    # yookassa
+    SHOP_TOKEN: str
+    SHOP_ID: str
+    YOOKASSA_URL: str
+
+    # cbr
+    CBR_URL: str
 
     @property
     def sqlalchemy_database_uri(self) -> PostgresDsn:
@@ -65,6 +77,15 @@ class Settings(BaseSettings):
     @property
     def core_url(self):
         return self.CORE_APP_URL + self.CORE_APP_AID
+
+    @property
+    def authorization_basic_token(self):
+        token = b64encode(f"{self.SHOP_ID}:{self.SHOP_TOKEN}".encode('utf-8')).decode("ascii")
+        return token
+
+    @property
+    def idempotence_key(self):
+        return str(uuid.uuid4())
 
 
 settings = Settings()

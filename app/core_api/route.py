@@ -1,6 +1,9 @@
 from httpx import AsyncClient, Response
 from app.config.config import settings
-from app.log.log import serialization_results_json
+from app.log.log import (
+    core_json_api_serialization,
+    yookassa_json_api_serialization
+)
 
 
 async def route(
@@ -12,25 +15,15 @@ async def route(
     headers: dict = {}
 ) -> 'Response':
 
-    async with AsyncClient(
-        base_url=settings.core_url, headers=headers
-    ) as client:
+    async with AsyncClient(base_url=settings.core_url, headers=headers) as client:
         request = client.build_request(
             url=path, method=method, data=data, json=json, params=params
         )
         response = await client.send(request)
         return response
 
-# TODO: на этом уровне у функций создать обработчик исключений
-# TODO: если тело ответа будет содержать "error" -> вызвать исключение -> записать в лог
-# TODO: затем вернуть ответ пользователю о неисправности
-# TODO: главное что бы бот после исключения не падал, а продолжал работать
 
-
-# TODO: регистрация авторизация и создание диалога реализовать в рамках одной сессии к ядру
-
-
-@serialization_results_json
+@core_json_api_serialization
 async def create_user_in_core(
     email: str, password: str, user_tg_id: int
 ):
@@ -43,7 +36,7 @@ async def create_user_in_core(
     return response, user_tg_id
 
 
-@serialization_results_json
+@core_json_api_serialization
 async def login_user_in_core(
     email: str, password: str, user_tg_id: int
 ):
@@ -56,21 +49,21 @@ async def login_user_in_core(
     return response, user_tg_id
 
 
-@serialization_results_json
+@core_json_api_serialization
 async def create_dialog(
     token: str, name: str, model_id: int, user_tg_id: int
 ):
     response = (
         await route(
             "dialogues/", "POST",
-            json={"name": name, "bot_id": model_id},
+            json={"name": name, "model_id": model_id},
             headers={"Authorization": f"Bearer {token}"}
         )
     )
     return response, user_tg_id
 
 
-@serialization_results_json
+@core_json_api_serialization
 async def create_message(
     user_tg_id: int,
     token: str,
@@ -80,33 +73,124 @@ async def create_message(
 ):
     response = await route(
         f"dialogues/{dialog_id}/messages", "POST",
-        json={"bot_id": model_id, "text": text},
+        json={"model_id": model_id, "text": text},
         headers={'Authorization': f'Bearer {token}'}
     )
     return response, user_tg_id
 
 
-@serialization_results_json
+@core_json_api_serialization
 async def list_models(user_tg_id: int):
+
     response = await route(
-        "bots/", "GET"
+        "models/", "GET"
     )
     return response, user_tg_id
 
 
-"""
-@serialization_results_json
-async def optionally_update_dialog(
-    token: str,
-    dialogue_id: int,
-    dialogue_name: str,
+@yookassa_json_api_serialization
+async def create_payment_in_yookassa(
+    user_tg_id: int,
+    user_chat_id: int,
+    amount: str,
+    user_phone: str
 ):
-    response = (
-        await route(
-            f"dialogues/{dialogue_id}/", "PATCH",
-            json={"name": dialogue_name},
-            headers={"Authorization": f"Bearer {token}"}
-        )
+    token, idempotence_key = settings.authorization_basic_token, settings.idempotence_key
+    headers = {
+        "Content-type": "application/json",
+        "Idempotence-Key": idempotence_key,
+        "Authorization": "Basic %s" % token
+    }
+    body = {
+            "amount": {
+                "value": "%s.00" % amount,
+                "currency": "RUB"
+            },
+            "confirmation": {
+                "type": "redirect",
+                "return_url": "t.me/pgt_ai_payment_bot"
+            },
+            "refundable": False,
+            "capture": True,
+            "description": "Пополнение баланса",
+            "metadata": {
+                "user_chat_id": "%s" % user_chat_id,
+                "user_tg_id": "%s" % user_tg_id
+            },
+            "receipt": {
+                "customer": {
+                    "phone": user_phone,
+                },
+                "items": [
+                    {
+                        "description": "Токен",
+                        "quantity": amount,
+                        "amount": {
+                            "value": "1.00",
+                            "currency": "RUB"
+                        },
+                        "vat_code": "1"
+                    }
+                ]
+            },
+            "test": True
+        }
+
+    response = await route_yookassa(
+        "/payments",
+        "POST",
+        headers=headers,
+        body=body
     )
+    return response, user_tg_id
+
+
+@yookassa_json_api_serialization
+async def get_current_info_user_payment(payment_id: str, user_tg_id: int):
+
+    response = await route_yookassa(
+        "/payments/%s" % payment_id, "GET",
+        headers={"Authorization": "Basic %s" % settings.authorization_basic_token}
+    )
+    return response, user_tg_id
+
+
+async def route_yookassa(
+    path: str,
+    method: str,
+    body: dict = {},
+    headers: dict = {}
+) -> "Response":
+
+    async with AsyncClient(base_url=settings.YOOKASSA_URL, headers=headers) as client:
+        request = client.build_request(method=method, url=path, json=body)
+        response = await client.send(request)
+
     return response
-"""
+
+
+async def route_cbr():
+    async with AsyncClient() as client:
+        response = await client.get(url=settings.CBR_URL)
+        return response
+
+
+# async def route_yookassa(
+#     headers: dict, path: str, body: dict
+# ) -> "Response":
+#     session = requests.Session()
+#     retries = Retry(total=10,
+#                     backoff_factor=5 / 1000,
+#                     allowed_methods=['POST'],
+#                     status_forcelist=[202])
+#     session.mount('https://', HTTPAdapter(max_retries=retries))
+#     response = session.request(
+#         "POST",
+#         path,
+#         headers=headers,
+#         json=body,
+#         # verify=self.configuration.verify
+#     )
+#
+#     session.close()
+#     return response

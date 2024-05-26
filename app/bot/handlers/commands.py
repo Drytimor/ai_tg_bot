@@ -1,75 +1,71 @@
 from aiogram import Router, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
-from app.log.log import (
-    msg_error_answer,
-    msg_limit_error,
-    RateLimitError,
+from aiogram.types import (
+    Message,
+    CallbackQuery,
 )
-from app.log.config import logger
-from app.bot.keyboards import model_buttons
-from app.bot.states import ChoicesModels
-
+from app.bot.keyboards import model_buttons, payment_button
+from app.bot.states import (
+    ChoicesModels,
+    Payments
+)
 from app.services.core import (
+    authentication_user_in_system,
     create_messages,
     new_context,
     get_list_models,
-    authentication_user,
-    set_model_user
+    set_model_user,
+    get_user_balance,
 )
-
+from app.services.payment import create_payment_for_user
 
 router = Router()
 
 
 @router.message(Command("start"))
-async def start(msg: Message):
-    try:
-        await authentication_user(msg.from_user.id)
-    except Exception as exc:
-        logger.error(exc_info=True, msg=exc.args)
-        await msg.answer(msg_error_answer)
-    else:
-        await msg.answer(f"I am bot GPT")
+async def start(msg: Message, state: FSMContext):
+    await state.clear()
+    message_answer = await authentication_user_in_system(msg.from_user.id)
+    await msg.answer(message_answer)
 
 
 @router.message(Command("context"))
-async def reset_context(msg: Message):
-    try:
-        await new_context(msg.from_user.id)
-    except Exception as exc:
-        logger.error(exc_info=True, msg=exc.args)
-        await msg.answer(msg_error_answer)
-    else:
-        await msg.answer(f"Контекст сброшен")
+async def reset_context(msg: Message, state: FSMContext):
+    await state.clear()
+    message_answer = await new_context(msg.from_user.id)
+    await msg.answer(message_answer)
 
 
 @router.message(Command("balance"))
-async def get_balance(msg: Message):
-    await msg.answer("Ваш баланс: 0")
+async def get_balance(msg: Message, state: FSMContext):
+    await state.clear()
+    message_answer = await get_user_balance(msg.from_user.id)
+    await msg.answer(
+        message_answer,
+        reply_markup=payment_button()
+    )
 
 
 @router.message(Command("help"))
-async def get_help(msg: Message):
+async def get_help(msg: Message, state: FSMContext):
+    await state.clear()
     await msg.answer("help")
 
 
 @router.message(Command("models"))
 async def model_choices_state(msg: Message, state: FSMContext):
+    await state.clear()
     await state.set_state(ChoicesModels.model_choices)
-    try:
-        models = await get_list_models(msg.from_user.id)
-    except Exception as exc:
-        logger.error(exc_info=True, msg=exc.args)
-        await msg.answer(msg_error_answer)
-    else:
+    models, massage_answer = await get_list_models(msg.from_user.id)
+    if models:
         await state.update_data(models)
-
         await msg.answer(
-            "выберите модель",
+            massage_answer,
             reply_markup=model_buttons(models.keys())
         )
+    else:
+        await msg.answer(massage_answer)
 
 
 @router.message(StateFilter(ChoicesModels.model_choices), F.text)
@@ -77,31 +73,39 @@ async def user_choices_model(msg: Message, state: FSMContext):
     data = await state.get_data()
     if msg.text.lower() in data:
 
-        await set_model_user(
+        message = await set_model_user(
             user_tg_id=msg.from_user.id,
             model_id=int(data[msg.text]),
             model_name=msg.text
         )
-        await msg.answer("Модель изменена")
-        await state.clear()
+        await msg.answer(message)
     else:
-        await state.clear()
         await messages_bot(msg)
 
+    await state.clear()
 
-@router.message(F.text)
+
+@router.message(StateFilter(None), F.text)
 async def messages_bot(msg: Message):
-    try:
-        response_bot = await create_messages(msg.from_user.id, msg.text)
+    message_answer = await create_messages(msg.from_user.id, msg.text)
+    await msg.answer(message_answer)
 
-    except RateLimitError as exc:
-        await msg.answer(msg_limit_error % exc.delay)
 
-    except Exception as exc:
-        logger.error(exc_info=True, msg=exc.args)
-        await msg.answer(msg_error_answer)
+@router.callback_query(StateFilter(None), F.data == "top_up_balance")
+async def user_input_amount(clb: CallbackQuery, state: FSMContext):
+    await state.set_state(Payments.payment)
+    await clb.message.answer("Введите сумму платежа")
 
-    else:
-        await msg.answer(response_bot)
+
+@router.message(StateFilter(Payments.payment), F.text.regexp(r"^[1-9]*\d*$"))
+async def create_payment(msg: Message, state: FSMContext):
+    message_answer = await create_payment_for_user(
+        user_tg_id=msg.from_user.id,
+        user_chat_id=msg.chat.id,
+        amount=msg.text,
+        user_phone="79190076870"
+    )
+    await msg.answer(message_answer)
+    await state.clear()
 
 
