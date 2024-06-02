@@ -340,7 +340,7 @@ async def get_current_value_currency():
             Decimal(price_param["output_price"])
         )
 
-    path_yaml = "/Users/dry/Projects/ai_tg_bot/currency_app/price.yaml"
+    path_yaml = "/Users/dry/Projects/ai_tg_bot/currency_app/price.yaml"  # хардкод друг
     with open(path_yaml) as f:
         data = yaml.safe_load(f)
 
@@ -353,7 +353,6 @@ async def get_current_value_currency():
         input_price=input_price,
         output_price=output_price
     )
-
     return currency, input_price, output_price
 
 
