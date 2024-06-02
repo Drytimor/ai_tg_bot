@@ -21,21 +21,23 @@ from app.bot.text import (
     msg_success_up_balance,
     msg_fail_up_balance
 )
+from app.services.cache import set_context_limit_in_cache
 
 
 async def create_payment_for_user(
     user_tg_id: int,
     user_chat_id: int,
     amount: str,
-    user_phone: str
 ):
+
+    await set_context_limit_in_cache(user_tg_id)
+
     message_answer = "%s"
     try:
         payment = await create_payment_in_yookassa(
             user_tg_id=user_tg_id,
             user_chat_id=user_chat_id,
             amount=amount,
-            user_phone=user_phone
         )
     except PaymentError:
         message_answer = message_answer % msg_payment_error
@@ -89,8 +91,6 @@ async def update_user_payment_status(webhook_data: dict):
             "amount": Decimal(current_payment["amount"]["value"]),
             "income_amount": Decimal(current_payment["income_amount"]["value"]),
             "captured_at": datetime.strptime(current_payment["captured_at"], "%Y-%m-%dT%H:%M:%S.%fZ"),
-            "receipt_registration": current_payment["receipt_registration"]
-
         })
         await increment_user_balance_in_db(**data)
 

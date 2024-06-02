@@ -1,6 +1,9 @@
 import logging
 from functools import wraps
-from app.services.cache import del_token_from_cache
+from app.services.cache import (
+    del_token_from_cache,
+    set_context_limit_in_cache
+)
 from app.log.config import (
     user_id,
     user_request,
@@ -38,22 +41,31 @@ class RateLimitError(Exception):
         # self.msg = msg
 
 
+class ContextLimitError(Exception):
+    """Превышен предельный лимит контекста"""
+
+
 class PaymentError(Exception):
     """Пришла ошибка от yookassa"""
     def __init__(self, msg=None):
         self.msg = msg
 
 
+class NegativeBalance(Exception):
+    """Отрицательный баланс пользователя"""
+
+
 msg_error_answer = """
-Возникла непредвиденная ошибка.
-Обратитесь в техническую поддержку или попробуйте
-перезапустить бота командой /start
+Возникла непредвиденная ошибка.\nОбратитесь в техническую поддержку\nили попробуйте перезапустить бота командой /start
 """
 msg_limit_error = """
 Невозможно обработать запрос из-за высокой нагрузки. Пожалуйста, попробуйте повторить запрос через %d сек
 """
+msg_limit_context_error = """
+Лимит запросов превышен.\nДля продолжения необходимо сбросить контекст командой /context и начать беседу с новой темы
+"""
 msg_server_error = "error %s"
-msg_payment_error = "невозможно провести оплату"
+msg_payment_error = "Невозможно провести оплату"
 
 
 def core_json_api_serialization(func):
@@ -87,17 +99,22 @@ def core_json_api_serialization(func):
                 user_error.set(error)
 
                 if error["code"] == "rate_limit_exceeded":
-                    logger_core.error("error")
+                    logger_core.error("rate_limit_exceeded")
                     raise RateLimitError(delay=error["delay"])
 
+                elif error["code"] == "context_limit_exceeded":
+                    await set_context_limit_in_cache(user_tg_id, value=0)
+                    logger_core.error("context_limit_exceeded")
+                    raise ContextLimitError
+
                 elif error["message"] == "Application user error":
-                    logger_core.error("error")
                     await del_token_from_cache(user_tg_id=user_tg_id)
+                    logger_core.error("Application user error")
                     raise ApplicationUserError
 
                 elif error["message"] == "Internal server error":
-                    logger_core.error("error")
                     await del_token_from_cache(user_tg_id=user_tg_id)
+                    logger_core.error("Internal server error")
                     raise InternalServerError
 
                 else:

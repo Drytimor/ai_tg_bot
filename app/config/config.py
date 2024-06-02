@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     DEFAULT_NAME_GPT_MODEL: str
     FIRST_NAME_DIALOGUE_MODEL: str = "dialogue"
     NAME_DIALOGUE_MODEL: str = "dialogue %d"
+    TIMEOUT_ANSWER_CORE: float = 20.0
+    TIMEOUT_CORE: float = 10.0
 
     # yookassa
     SHOP_TOKEN: str

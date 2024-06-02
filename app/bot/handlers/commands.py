@@ -1,4 +1,6 @@
+import asyncio
 from aiogram import Router, F
+from aiogram.enums.parse_mode import ParseMode
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
@@ -10,6 +12,11 @@ from app.bot.states import (
     ChoicesModels,
     Payments
 )
+from app.bot.text import (
+    msg_help,
+    msg_invalid_input_payments,
+)
+from app.services.cache import check_context_limit, set_context_limit_in_cache
 from app.services.core import (
     authentication_user_in_system,
     create_messages,
@@ -50,7 +57,8 @@ async def get_balance(msg: Message, state: FSMContext):
 @router.message(Command("help"))
 async def get_help(msg: Message, state: FSMContext):
     await state.clear()
-    await msg.answer("help")
+    await set_context_limit_in_cache(msg.from_user.id)
+    await msg.answer(msg_help)
 
 
 @router.message(Command("models"))
@@ -87,8 +95,14 @@ async def user_choices_model(msg: Message, state: FSMContext):
 
 @router.message(StateFilter(None), F.text)
 async def messages_bot(msg: Message):
-    message_answer = await create_messages(msg.from_user.id, msg.text)
-    await msg.answer(message_answer)
+    if not await check_context_limit(msg.from_user.id):
+        await asyncio.sleep(0.5)
+        await msg.delete()
+
+    else:
+        await msg.chat.do(action="typing")
+        message_answer = await create_messages(msg.from_user.id, msg.text)
+        await msg.answer(message_answer, parse_mode=ParseMode.MARKDOWN_V2)
 
 
 @router.callback_query(StateFilter(None), F.data == "top_up_balance")
@@ -103,9 +117,13 @@ async def create_payment(msg: Message, state: FSMContext):
         user_tg_id=msg.from_user.id,
         user_chat_id=msg.chat.id,
         amount=msg.text,
-        user_phone="79190076870"
     )
     await msg.answer(message_answer)
     await state.clear()
+
+
+@router.message(StateFilter(Payments.payment), F.text)
+async def invalid_input_user_for_payment(msg: Message):
+    await msg.answer(msg_invalid_input_payments)
 
 

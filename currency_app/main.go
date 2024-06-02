@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"github.com/redis/go-redis/v9"
-	"os"
 	"time"
 	"net/http"
 	"encoding/xml"

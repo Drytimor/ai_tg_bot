@@ -35,7 +35,6 @@ async def del_token_from_cache(user_tg_id: int):
 
 async def set_user_dialogue_in_cache(
     user_tg_id: int,
-    # user_balance: Decimal,
     model_id: int,
     dialogue_id: int,
 ):
@@ -46,10 +45,24 @@ async def set_user_dialogue_in_cache(
             mapping={
                 "model_id": model_id,
                 "dialogue_id": dialogue_id,
-                # "user_balance": user_balance
+                "context_limit": 1
             }
         )
         await client.expire(name, 14400, nx=True)
+
+
+async def set_context_limit_in_cache(user_tg_id: int, value: int = 1):
+    name = __user_dialogue % user_tg_id
+    async with client_redis() as client:
+        await client.hset(name=name, key="context_limit", value=value)
+
+
+async def check_context_limit(user_tg_id: int):
+    name = __user_dialogue % user_tg_id
+    async with client_redis() as client:
+        result = await client.hget(name=name, key="context_limit")
+
+    return False if result == "0" else True
 
 
 async def get_user_dialogue_from_cache(user_tg_id: int):
@@ -58,17 +71,6 @@ async def get_user_dialogue_from_cache(user_tg_id: int):
         result = await client.hgetall(name=name)
     return result
 
-
-async def get_user_balance_from_cache(user_tg_id: int):
-    name = __user_dialogue % user_tg_id
-    async with client_redis() as client:
-        result = await client.hget(name, "user_balance")
-    return result
-
-
-# async def decrement_user_balance_in_cache(user_tg_id: int):
-#     name = __user_dialogue % user_tg_id
-#
 
 async def del_user_dialogue_from_cache(user_tg_id: int):
     name = __user_dialogue % user_tg_id
@@ -104,5 +106,7 @@ async def get_price_parameters_from_cache():
         result = await client.hgetall(name)
 
     return result
+
+
 
 

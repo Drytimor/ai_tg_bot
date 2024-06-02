@@ -129,7 +129,7 @@ async def update_user_model_in_db(
     await async_engine.dispose()
 
 
-async def update_dialogue_user(user_tg_id: int, dialogue_id: int):
+async def update_dialogue_user_in_db(user_tg_id: int, dialogue_id: int):
     async with async_engine.connect() as connect:
 
         stmt = (
@@ -228,7 +228,6 @@ async def increment_user_balance_in_db(
     amount: "Decimal",
     income_amount: "Decimal",
     captured_at: "datetime",
-    receipt_registration: str
 ):
     async with async_engine.connect() as connect:
         update_cte = (
@@ -237,7 +236,6 @@ async def increment_user_balance_in_db(
                 status=status,
                 captured_at=captured_at,
                 income_amount=income_amount,
-                receipt_registration=receipt_registration
             ).
             where(user_payments.c.payment_id == payment_id)
         ).cte("cte")
